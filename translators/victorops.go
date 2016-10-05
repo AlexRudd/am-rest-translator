@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -132,8 +133,21 @@ func victorops(rw http.ResponseWriter, req *http.Request) {
 			// extract victorops_message_type label if defined
 			if alert.Labels["victorops_message_type"] != "" {
 				messageType = alert.Labels["victorops_message_type"]
+				delete(alert.Labels, "victorops_message_type")
 			}
-			// combine all annotations, alerts, and urls into state message
+			// extract prom_host label if defined
+			promGraphURL, _ := url.Parse(alert.GeneratorURL)
+			if alert.Labels["prom_host"] != "" {
+				promGraphURL.Host = alert.Labels["prom_host"]
+				delete(alert.Labels, "prom_host")
+			}
+			// extract am_host label if defined
+			alertManagerURL, _ := url.Parse(wm.ExternalURL)
+			if alert.Labels["am_host"] != "" {
+				alertManagerURL.Host = alert.Labels["am_host"]
+				delete(alert.Labels, "am_host")
+			}
+			// combine all annotations, labels, and urls into state message
 			stateMessage := ""
 			for k, v := range alert.Annotations {
 				stateMessage += k + ": " + v + "\n"
@@ -141,8 +155,8 @@ func victorops(rw http.ResponseWriter, req *http.Request) {
 			for k, v := range alert.Labels {
 				stateMessage += k + ": " + v + "\n"
 			}
-			stateMessage += "Prometheus: " + alert.GeneratorURL + "\n"
-			stateMessage += "Alertmanager: " + wm.ExternalURL
+			stateMessage += "Prometheus: " + promGraphURL.String() + "\n"
+			stateMessage += "Alertmanager: " + alertManagerURL.String()
 
 			// build alert
 			vp := victoropsPost{
@@ -159,7 +173,6 @@ func victorops(rw http.ResponseWriter, req *http.Request) {
 			if err == nil {
 				// Post Alert
 				resp, err := http.Post("https://alert.victorops.com/integrations/generic/20131114/alert/"+apiKey+"/"+routingKey, "application/json", bytes.NewBuffer(b))
-				//resp, err := http.Post("http://localhost:8080/repeat?api="+apiKey+"&route="+routingKey, "application/json", bytes.NewBuffer(b))
 				if err != nil {
 					log.Errorf("Failed post to VictorOps REST api: %s", err.Error())
 					rw.WriteHeader(http.StatusBadGateway)
@@ -207,7 +220,6 @@ func victorops(rw http.ResponseWriter, req *http.Request) {
 		if err == nil {
 			// Post Alert
 			resp, err := http.Post("https://alert.victorops.com/integrations/generic/20131114/alert/"+apiKey+"/"+routingKey, "application/json", bytes.NewBuffer(b))
-			//resp, err := http.Post("http://localhost:8080/repeat?api="+apiKey+"&route="+routingKey, "application/json", bytes.NewBuffer(b))
 			if err != nil {
 				log.Errorf("Failed post to VictorOps REST api: %s", err.Error())
 				rw.WriteHeader(http.StatusBadGateway)
